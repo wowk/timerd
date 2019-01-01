@@ -117,8 +117,7 @@ static void exec_timer_cb(struct timer* timer)
 {
     int pid = fork();
     if(0 == pid){
-        daemon(0, 1);
-        printf("execute: %s\n", timer->command);
+        daemon(0, 0);
         exit(system(timer->command));
     }else if(0 < pid){
         waitpid(pid, NULL, 0);
@@ -211,6 +210,8 @@ static void dump_timer_list(struct timer_list* list)
 
 int timerd_main(int argc, char* argv[])
 {
+    daemon(0, 1);
+
     struct timer_list timer_list;
 
     memset(&timer_list, 0, sizeof(struct timer_list));
@@ -296,10 +297,11 @@ int timerd_main(int argc, char* argv[])
 
 void timerctl_usage(const char* name)
 {
-    printf("usage: %s -amdi [ -C <count>] [ -c <command> ] [ -n <name> ] [ -t <mseconds> ]\n"
+    printf("usage: %s -lamdi [ -C <count>] [ -c <command> ] [ -n <name> ] [ -t <mseconds> ]\n"
            "\t-a            : add new timer action\n"
            "\t-m            : change exist timer action\n"
            "\t-d            : delete exist timer action\n"
+           "\t-l            : list all timer actions\n"
            "\t-C <count>    : delete this timer after <count> times triggered\n"
            "\t-c <command>  : timout action\n"
            "\t-n <name>     : timer name\n"
@@ -314,6 +316,11 @@ int timerctl_main(int argc, char** argv)
     int ms;
     struct timer_ctl tc;
     char op_mask[32];
+
+    if(argc < 2){
+        timerctl_usage(argv[0]);
+        return 0;
+    }
 
     memset(op_mask, 0, sizeof(op_mask));
     memset(&tc, 0, sizeof(tc));
@@ -345,6 +352,9 @@ int timerctl_main(int argc, char** argv)
                 tc.timer.interval.tv_sec = ms / 1000;
                 tc.timer.interval.tv_usec = (ms%1000) * 1000;
                 break;
+            case 'C':
+                tc.timer.count = atoi(optarg);
+                break;
             case 'n':
                 strncpy(tc.timer.name, optarg, sizeof(tc.timer.name)-1);
                 break;
@@ -362,18 +372,13 @@ int timerctl_main(int argc, char** argv)
         return -EINVAL;
     }
 
-    printf("check done\n");
     FILE* fp = fopen("/tmp/timerd.fifo", "w");
     if(!fp){
         return -errno;
     }
-    printf("opened\n");
     flockfile(fp);
-    printf("locked\n");
     fwrite(&tc, sizeof(tc), 1, fp);
-    printf("write\n");
     funlockfile(fp);
-    printf("unlocked\n");
     fclose(fp);
 
     return 0;
@@ -383,11 +388,8 @@ int main(int argc, char** argv)
 {
     char* name = strdupa(argv[0]);
     name = basename(name);
-    printf("%s\n", name);
     if(!strcmp(name, "timerctl")){
-        printf("timerctl\n");
         return timerctl_main(argc, argv);
     }
-    printf("timerd\n");
     return timerd_main(argc, argv);
 }
